@@ -1,0 +1,36 @@
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Compiled Dynamic libraries
+*.so
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+
+~*
+*~
+
+*.swp
+*.swo
+*.o
+*.d
+*.exe
+
+# Visual Studio files
+*.sdf
+*.opensdf
+*.vcxproj.user
+*.suo
+ipch
+obj
+*.vsp
+*.psess
+
+# Compiled binaries
+/snapr
+/unit_tests
