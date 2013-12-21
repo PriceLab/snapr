@@ -1,6 +1,6 @@
 # SNAPR
 
-Scalable Nucleotide Alignment Program RNA-seq - <http://pricelab.systemsbiology.net/SNAPR>
+Scalable Nucleotide Alignment Program RNA-seq - <http://price.systemsbiology.net/SNAPR>
 
 ## Overview
 
@@ -9,7 +9,7 @@ We present SNAPR, a new method for RNA-seq analysis, optimized for hundreds or e
 ## Documentation
 
 A quick start guide and user manual are available in the `docs` folder, with
-additional documentation at <http://pricelab.systemsbiology.net/SNAPR>.
+additional documentation at <http://price.systemsbiology.net/SNAPR>.
 
 ## Building
 
