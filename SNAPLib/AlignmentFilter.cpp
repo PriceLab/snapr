@@ -19,7 +19,11 @@ Revision History:
 
 --*/
 
+#include "stdafx.h"
+
 #include "AlignmentFilter.h"
+
+using std::min;
 
 Alignment::Alignment(unsigned location_, Direction direction_, int score_, int mapq_, string rname_, unsigned pos_, unsigned pos_end_, unsigned pos_original_, string transcript_id_, string gene_id_, bool isTranscriptome_) 
     : location(location_), direction(direction_), score(score_), mapq(mapq_), rname(rname_), pos(pos_), pos_end(pos_end_), pos_original(pos_original_), transcript_id(transcript_id_), gene_id(gene_id_), isTranscriptome(isTranscriptome_)
@@ -110,7 +114,7 @@ AlignmentFilter::AlignmentFilter(Read *read0_, Read *read1_, const Genome* genom
 
 AlignmentFilter::~AlignmentFilter() {}
 
-int AlignmentFilter::HashAlignment(Alignment& alignment, alignment_map& hashtable) {
+void AlignmentFilter::HashAlignment(Alignment& alignment, alignment_map& hashtable) {
 
     //Try to find this transcript in the transcript_map
     alignment_map::iterator pos = hashtable.find(alignment.hashkey);
@@ -118,21 +122,18 @@ int AlignmentFilter::HashAlignment(Alignment& alignment, alignment_map& hashtabl
     //If this sequence is not found, create a new vector to store this sequence (and others like it)
     if ((pos == hashtable.end())) {
         hashtable.insert(alignment_map::value_type(alignment.hashkey, alignment));
-        return 0;
         
     } else {
     
         //Place alignment with the better score
         if (alignment.score < pos->second.score) {
             pos->second = alignment;
-            return 1;
         
         //If the two scores are equal, keep the transcriptome alignment (if any)
         } else if (alignment.score == pos->second.score) {
             if (alignment.isTranscriptome) {
                 pos->second = alignment;
             }
-            return 1;
         }
     }
 }
@@ -216,7 +217,7 @@ AlignmentResult AlignmentFilter::FilterSingle(unsigned* location, Direction* dir
     for (alignment_map::iterator m0 = mate0.begin(); m0 != mate0.end(); ++m0) {
     
         //If this read passes the maxDist cutoff
-        if (m0->second.score > maxDist) {
+        if (m0->second.score > (int) maxDist) {
             continue;
         }
     
@@ -249,7 +250,7 @@ AlignmentResult AlignmentFilter::FilterSingle(unsigned* location, Direction* dir
 
         *direction = alignments[0].direction;
         *score = alignments[0].score;
-        *mapq = std::min(maxMAPQ, genome_mapq);
+        *mapq = min(maxMAPQ, genome_mapq);
         *isTranscriptome = alignments[0].isTranscriptome;
 
         if (alignments[0].isTranscriptome) {
@@ -280,7 +281,7 @@ AlignmentResult AlignmentFilter::FilterSingle(unsigned* location, Direction* dir
 
         unsigned diff = alignments[1].score - alignments[0].score;              
         if (diff >= confDiff) {
-            *mapq = std::min(maxMAPQ, genome_mapq);
+            *mapq = min(maxMAPQ, genome_mapq);
   
             if (alignments[0].isTranscriptome) {
                gtf->IncrementReadCount(alignments[0].transcript_id, alignments[0].pos_original, alignments[0].pos, read1->getDataLength());
@@ -339,7 +340,7 @@ int AlignmentFilter::Filter(PairedAlignmentResult* result) {
     //Iterate through all mate0;
     for (alignment_map::iterator m0 = mate0.begin(); m0 != mate0.end(); ++m0) {
      
-        if (m0->second.score > maxDist) {
+        if (m0->second.score > (int) maxDist) {
             continue;
         }
        
@@ -347,7 +348,7 @@ int AlignmentFilter::Filter(PairedAlignmentResult* result) {
         for (alignment_map::iterator m1 = mate1.begin(); m1 != mate1.end(); ++m1) {
         
             //If this read passes the maxDist cutoff
-            if (m1->second.score > maxDist) {
+            if (m1->second.score > (int) maxDist) {
                 continue;
             }
             
@@ -872,7 +873,7 @@ void AlignmentFilter::UnalignedRead(alignment_map &mate, Read *read, unsigned mi
             //printf("SCORES: %u %u %u %u\n", align0->score, align1->score, read->getDataLength(), seedLen);
 
             //If not enough of the read is represented
-            if ((align0->score + align1->score) < (read->getDataLength() - seedLen)) {
+            if ((align0->score + align1->score) < (int) (read->getDataLength() - seedLen)) {
                 continue;
             }		
             
@@ -1099,7 +1100,7 @@ void AlignmentFilter::CheckNoRC(PairedAlignmentResult *result, std::vector<Align
         if (it->align1->rname.compare(it->align2->rname) == 0) {
         
             //If the score is better
-            if (it->score < result->score[0] + result->score[1]) {
+            if ((int) it->score < result->score[0] + result->score[1]) {
             
                 result->status[0] = MultipleHits;
                 result->status[1] = MultipleHits;
@@ -1151,14 +1152,14 @@ void AlignmentFilter::ProcessPairs(PairedAlignmentResult* result, std::vector<Al
         result->status[0] = SingleHit;
         result->direction[0] = pairs[0].align1->direction;
         result->score[0] = pairs[0].align1->score;
-        result->mapq[0] = std::min(maxMAPQ, genome_mapq);
+        result->mapq[0] = min(maxMAPQ, genome_mapq);
         //result->mapq[0] = 70;
         result->isTranscriptome[0] = pairs[0].align1->isTranscriptome;
         
         result->status[1] = SingleHit;
         result->direction[1] = pairs[0].align2->direction;
         result->score[1] = pairs[0].align2->score;
-        result->mapq[1] = std::min(maxMAPQ, genome_mapq);
+        result->mapq[1] = min(maxMAPQ, genome_mapq);
         //result->mapq[1] = 70;
         result->isTranscriptome[1] = pairs[0].align2->isTranscriptome;
         
@@ -1214,8 +1215,8 @@ void AlignmentFilter::ProcessPairs(PairedAlignmentResult* result, std::vector<Al
         if (diff >= confDiff) {
         
             //Unique high quality hit
-            result->mapq[0] = std::min(maxMAPQ, genome_mapq);
-            result->mapq[1] = std::min(maxMAPQ, genome_mapq);
+            result->mapq[0] = min(maxMAPQ, genome_mapq);
+            result->mapq[1] = min(maxMAPQ, genome_mapq);
             //result->mapq[0] = 70;
             //result->mapq[1] = 70;
             result->status[0] = SingleHit;
