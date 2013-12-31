@@ -377,7 +377,7 @@ GzipWriterFilterSupplier::onClosing(
         char* ignore;
         pair<_uint64,_uint64> last;
         size_t used;
-        writer->getBatch(-1, &ignore, NULL, &used, &last.second, NULL, &last.first);
+        writer->getBatch(-1, &ignore, NULL, &used, (size_t*)&last.second, NULL, (size_t*)&last.first);
         last.second += used;
         translation.push_back(last);
 
