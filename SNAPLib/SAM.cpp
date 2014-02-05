@@ -1060,7 +1060,7 @@ SAMFormat::writeRead(
         
             cigar = computeCigarString(transcriptome, lv, cigarBuf, cigarBufSize, cigarBufWithClipping, cigarBufWithClippingSize, 
                                        clippedData, clippedLength, basesClippedBefore, extraBasesClippedBefore, basesClippedAfter, extraBasesClippedAfter,
-                                       read->getOriginalFrontHardClipping(), read->getOriginalBackHardClipping(), genomeLocation, direction, useM, &editDistance, tokens);        
+                                       read->getOriginalFrontHardClipping(), read->getOriginalBackHardClipping(), tlocation, direction, useM, &editDistance, tokens);        
         
             //We need the pieceName for conversion             
             const Genome::Contig *transcriptomePiece = transcriptome->getContigAtLocation(tlocation);
@@ -1195,7 +1195,7 @@ SAMFormat::computeCigarString(
 
     const char *reference = genome->getSubstring(genomeLocation, dataLength);
     if (NULL != reference) {
-        *editDistance = lv->computeEditDistanceNormalized(
+        *editDistance = lv->computeEditDistance(
                             reference,
                             dataLength - extraBasesClippedAfter,
                             data,
@@ -1230,15 +1230,23 @@ SAMFormat::computeCigarString(
         char hardClipAfter[16] = {'\0'};
         if (frontHardClipping > 0) {
             snprintf(hardClipBefore, sizeof(hardClipBefore), "%uH", frontHardClipping);
+            tokens.insert(tokens.begin(), 'H');
+            tokens.insert(tokens.begin(), frontHardClipping);
         }
         if (basesClippedBefore + extraBasesClippedBefore > 0) {
             snprintf(clipBefore, sizeof(clipBefore), "%uS", basesClippedBefore + extraBasesClippedBefore);
+            tokens.insert(tokens.begin(), 'S');
+            tokens.insert(tokens.begin(), basesClippedBefore + extraBasesClippedBefore);   
         }
         if (basesClippedAfter + extraBasesClippedAfter > 0) {
             snprintf(clipAfter, sizeof(clipAfter), "%uS", basesClippedAfter + extraBasesClippedAfter);
+            tokens.push_back(basesClippedAfter + extraBasesClippedAfter);
+            tokens.push_back('S');
         }
         if (backHardClipping > 0) {
             snprintf(hardClipAfter, sizeof(hardClipAfter), "%uH", backHardClipping);
+            tokens.push_back(backHardClipping);
+            tokens.push_back('H');
         }
         snprintf(cigarBufWithClipping, cigarBufWithClippingLen, "%s%s%s%s%s", hardClipBefore, clipBefore, cigarBuf, clipAfter, hardClipAfter);
 
