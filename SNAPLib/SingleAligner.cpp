@@ -28,10 +28,8 @@ Revision History:
 #include "Compat.h"
 #include "RangeSplitter.h"
 #include "GenomeIndex.h"
-#include "Range.h"
 #include "SAM.h"
 #include "Tables.h"
-#include "WGsim.h"
 #include "AlignerContext.h"
 #include "AlignerOptions.h"
 #include "FASTQ.h"
@@ -64,6 +62,8 @@ SingleAlignerContext::runTask()
     void
 SingleAlignerContext::runIterationThread()
 {
+	PreventMachineHibernationWhileThisThreadIsAlive();
+
     ReadSupplier *supplier = readSupplierGenerator->generateNewReadSupplier();
     if (NULL == supplier) {
         //
@@ -96,7 +96,7 @@ SingleAlignerContext::runIterationThread()
 
     SingleAlignmentResult *g_secondaryAlignments = NULL;
     unsigned g_secondaryAlignmentBufferCount;
-    if (maxSecondaryAligmmentAdditionalEditDistance < 0) {
+    if (maxSecondaryAlignmentAdditionalEditDistance < 0) {
         g_secondaryAlignmentBufferCount = 0;
     } else {
         g_secondaryAlignmentBufferCount = BaseAligner::getMaxSecondaryResults(numSeedsFromCommandLine, seedCoverage, maxReadSize, maxHits, index->getSeedLength());
@@ -112,16 +112,18 @@ SingleAlignerContext::runIterationThread()
             maxReadSize,
             numSeedsFromCommandLine,
             seedCoverage,
+	    minWeightToCheck,
             extraSearchDepth,
             noUkkonen,
             noOrderedEvaluation,
+			noTruncation,
             NULL,               // LV (no need to cache in the single aligner)
             NULL,               // reverse LV
             stats,
             g_allocator);
 
 
-    if (maxSecondaryAligmmentAdditionalEditDistance >= 0) {
+    if (maxSecondaryAlignmentAdditionalEditDistance >= 0) {
         g_secondaryAlignments = (SingleAlignmentResult *)g_allocator->allocate(g_secondaryAlignmentBufferSize);
     }
 
@@ -132,7 +134,7 @@ SingleAlignerContext::runIterationThread()
     
     SingleAlignmentResult *t_secondaryAlignments = NULL;
     unsigned t_secondaryAlignmentBufferCount;
-    if (maxSecondaryAligmmentAdditionalEditDistance < 0) {
+    if (maxSecondaryAlignmentAdditionalEditDistance < 0) {
         t_secondaryAlignmentBufferCount = 0;
     } else {
         t_secondaryAlignmentBufferCount = BaseAligner::getMaxSecondaryResults(numSeedsFromCommandLine, seedCoverage, maxReadSize, maxHits, transcriptome->getSeedLength());
@@ -147,17 +149,19 @@ SingleAlignerContext::runIterationThread()
             maxDist,
             maxReadSize,
             numSeedsFromCommandLine,
-            seedCoverage,            
+            seedCoverage, 
+            minWeightToCheck,           
             extraSearchDepth,
             noUkkonen,
             noOrderedEvaluation,
+            noTruncation,
             NULL,               // LV (no need to cache in the single aligner)
             NULL,               // reverse LV
             stats,
             t_allocator);
 
 
-    if (maxSecondaryAligmmentAdditionalEditDistance >= 0) {
+    if (maxSecondaryAlignmentAdditionalEditDistance >= 0) {
         t_secondaryAlignments = (SingleAlignmentResult *)t_allocator->allocate(t_secondaryAlignmentBufferSize);
     }
 
@@ -174,7 +178,7 @@ SingleAlignerContext::runIterationThread()
     
     if (contamination != NULL) {
 
-      if (maxSecondaryAligmmentAdditionalEditDistance < 0) {
+      if (maxSecondaryAlignmentAdditionalEditDistance < 0) {
           c_secondaryAlignmentBufferCount = 0;
       } else {
           c_secondaryAlignmentBufferCount = BaseAligner::getMaxSecondaryResults(numSeedsFromCommandLine, seedCoverage, maxReadSize, maxHits, contamination->getSeedLength());
@@ -191,15 +195,17 @@ SingleAlignerContext::runIterationThread()
               numSeedsFromCommandLine,
               seedCoverage,
               extraSearchDepth,
+              minWeightToCheck,
               noUkkonen,
               noOrderedEvaluation,
+              noTruncation,
               NULL,               // LV (no need to cache in the single aligner)
               NULL,               // reverse LV
               stats,
               c_allocator);
 
 
-      if (maxSecondaryAligmmentAdditionalEditDistance >= 0) {
+      if (maxSecondaryAlignmentAdditionalEditDistance >= 0) {
           c_secondaryAlignments = (SingleAlignmentResult *)c_allocator->allocate(c_secondaryAlignmentBufferSize);
       }
 
@@ -238,9 +244,9 @@ SingleAlignerContext::runIterationThread()
         }
 
         // Skip the read if it has too many Ns or trailing 2 quality scores.
-        if (read->getDataLength() < 50 || read->countOfNs() > maxDist || !quality) {
+        if (read->getDataLength() < minReadLength || read->countOfNs() > maxDist) {
             if (readWriter != NULL && options->passFilter(read, NotFound)) {
-                readWriter->writeRead(read, NotFound, 0, InvalidGenomeLocation, FORWARD, false, false, 0);
+                readWriter->writeRead(readerContext, read, NotFound, 0, InvalidGenomeLocation, FORWARD, false, false, 0);
             }
             continue;
         } else {
@@ -259,9 +265,20 @@ SingleAlignerContext::runIterationThread()
         
         int nSecondaryResults = 0;
 
+#ifdef LONG_READS
+        int oldMaxK = aligner->getMaxK();
+        if (options->maxDistFraction > 0.0) {
+            t_aligner->setMaxK(min(MAX_K, (int)(read->getDataLength() * options->maxDistFraction)));
+            g_aligner->setMaxK(min(MAX_K, (int)(read->getDataLength() * options->maxDistFraction)));
+            if (c_aligner != NULL) {
+              c_aligner->setMaxK(min(MAX_K, (int)(read->getDataLength() * options->maxDistFraction)));
+            }
+        }
+#endif
+
         AlignmentFilter filter(NULL, read, index->getGenome(), transcriptome->getGenome(), gtf, 0, 0, options->confDiff, options->maxDist, index->getSeedLength(), g_aligner);
 
-        t_aligner->AlignRead(read, &result, maxSecondaryAligmmentAdditionalEditDistance, t_secondaryAlignmentBufferCount, &nSecondaryResults, t_secondaryAlignments);
+        t_aligner->AlignRead(read, &result, maxSecondaryAlignmentAdditionalEditDistance, t_secondaryAlignmentBufferCount, &nSecondaryResults, t_secondaryAlignments);
 
         t_allocator->checkCanaries();
 
@@ -270,7 +287,7 @@ SingleAlignerContext::runIterationThread()
           filter.AddAlignment(t_secondaryAlignments[i].location, t_secondaryAlignments[i].direction, t_secondaryAlignments[i].score, t_secondaryAlignments[i].mapq, true, true);
         }
 
-        g_aligner->AlignRead(read, &result, maxSecondaryAligmmentAdditionalEditDistance, g_secondaryAlignmentBufferCount, &nSecondaryResults, g_secondaryAlignments);
+        g_aligner->AlignRead(read, &result, maxSecondaryAlignmentAdditionalEditDistance, g_secondaryAlignmentBufferCount, &nSecondaryResults, g_secondaryAlignments);
 
         g_allocator->checkCanaries();
 
@@ -288,7 +305,7 @@ SingleAlignerContext::runIterationThread()
             //If the contamination database is present
             if (c_aligner != NULL) {
 
-                c_aligner->AlignRead(read, &contaminantResult, maxSecondaryAligmmentAdditionalEditDistance, c_secondaryAlignmentBufferCount, &nSecondaryResults, c_secondaryAlignments);
+                c_aligner->AlignRead(read, &contaminantResult, maxSecondaryAlignmentAdditionalEditDistance, c_secondaryAlignmentBufferCount, &nSecondaryResults, c_secondaryAlignments);
                 c_allocator->checkCanaries();
 
                 if (contaminantResult.status != NotFound) {
@@ -298,6 +315,14 @@ SingleAlignerContext::runIterationThread()
             }
         }
 
+#ifdef LONG_READS
+        t_aligner->setMaxK(oldMaxK);
+        g_aligner->setMaxK(oldMaxK);
+        if (c_aligner != NULL) {
+          c_aligner->setMaxK(oldMaxK);
+        }
+#endif
+
 #if     TIME_HISTOGRAM
         _int64 runTime = timeInNanos() - startTime;
         int timeBucket = min(30, cheezyLogBase2(runTime));
@@ -305,20 +330,13 @@ SingleAlignerContext::runIterationThread()
         stats->nanosByTimeBucket[timeBucket] += runTime;
 #endif // TIME_HISTOGRAM
 
-        bool wasError = false;
-        if (result.status != NotFound && computeError) {
-            wasError = wgsimReadMisaligned(read, result.location, index, options->misalignThreshold);
-        }
-
         writeRead(read, result, false);
 
         /*
-        for (int i = 0; i < nSecondaryResults; i++) {
+	for (int i = 0; i < __min(nSecondaryResults, maxSecondaryAlignments); i++) {
             writeRead(read, secondaryAlignments[i], true);
         }
-        */
-
-        updateStats(stats, read, result.status, result.location, result.score, result.mapq, wasError);
+        */   
     }
 
     g_aligner->~BaseAligner(); // This calls the destructor without calling operator delete, allocator owns the memory.
@@ -344,7 +362,7 @@ SingleAlignerContext::writeRead(
     bool secondaryAlignment)
 {
     if (readWriter != NULL && options->passFilter(read, result.status)) {
-        readWriter->writeRead(read, result.status, result.mapq, result.location, result.direction, secondaryAlignment, result.isTranscriptome, result.tlocation);
+        readWriter->writeRead(readerContext, read, result.status, result.mapq, result.location, result.direction, secondaryAlignment, result.isTranscriptome, result.tlocation);
     }
 }
 
@@ -353,16 +371,11 @@ SingleAlignerContext::updateStats(
     AlignerStats* stats,
     Read* read,
     AlignmentResult result,
-    unsigned location, 
     int score,
-    int mapq,
-    bool wasError)
+    int mapq)
 {
     if (isOneLocation(result)) {
         stats->singleHits++;
-        if (computeError) {
-            stats->errors += wasError ? 1 : 0;
-        }
     } else if (result == MultipleHits) {
         stats->multiHits++;
     } else {
@@ -373,7 +386,6 @@ SingleAlignerContext::updateStats(
     if (result != NotFound) {
         _ASSERT(mapq >= 0 && mapq <= AlignerStats::maxMapq);
         stats->mapqHistogram[mapq]++;
-        stats->mapqErrors[mapq] += wasError ? 1 : 0;
     }
 }
 
